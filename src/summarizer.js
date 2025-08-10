@@ -1,14 +1,12 @@
+// summarizer.js
 import axios from 'axios';
 
-export async function summarizeText(text) {
+export const summarizeText = async (text) => {
   try {
-    const response = await axios.post('http://localhost:5050/summarize', {
-      text,
-    });
-    console.log("✅ Response:", response.data);
-    return response.data.summary;
+    const res = await axios.post('http://localhost:5050/summarize', { text });
+    return res.data.summary;
   } catch (err) {
-    console.error("❌ Error calling summarizer:", err.message);
-    return "Summarization failed.";
+    console.error('Error summarizing:', err);
+    return '⚠️ Failed to connect to summarizer API.';
   }
-}
+};
