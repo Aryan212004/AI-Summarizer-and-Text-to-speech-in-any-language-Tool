@@ -1,15 +1,16 @@
-from flask import Flask, request, jsonify
+from flask import Flask, request, jsonify, send_from_directory
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
 import nltk
 from nltk.tokenize import sent_tokenize
 import numpy as np
 from flask_cors import CORS
+import os
 
 # Download tokenizer
 nltk.download('punkt')
 
-app = Flask(__name__)
+app = Flask(__name__, static_folder="frontend", static_url_path="")
 CORS(app)  # Allow all origins — adjust if you want stricter security
 
 def extractive_summarize(text, num_sentences=3):
@@ -48,6 +49,15 @@ def summarize():
     except Exception as e:
         return jsonify({"summary": f"⚠️ Failed to summarize: {str(e)}"}), 500
 
+# Serve React frontend
+@app.route('/', defaults={'path': ''})
+@app.route('/<path:path>')
+def serve_frontend(path):
+    if path != "" and os.path.exists(os.path.join(app.static_folder, path)):
+        return send_from_directory(app.static_folder, path)
+    else:
+        return send_from_directory(app.static_folder, "index.html")
+
 if __name__ == "__main__":
-    # Use host='0.0.0.0' if you want external devices to access it
-    app.run(debug=True, port=5050)
+  port = int(os.environ.get("PORT", 5050))
+app.run(host="0.0.0.0", port=port, debug=True)
