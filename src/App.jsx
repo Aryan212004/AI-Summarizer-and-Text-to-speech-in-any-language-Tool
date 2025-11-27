@@ -1,5 +1,7 @@
 import { useState, useEffect } from 'react';
 
+const API_BASE_URL = 'http://localhost:5050';
+
 function App() {
   const [activeTab, setActiveTab] = useState('summarizer');
   const [summary, setSummary] = useState('');
@@ -9,23 +11,17 @@ function App() {
   const [translatedText, setTranslatedText] = useState('');
   const [translatedSummary, setTranslatedSummary] = useState('');
   const [darkMode, setDarkMode] = useState(false);
+  const [error, setError] = useState('');
   
   // Sentiment Analysis States
   const [sentimentText, setSentimentText] = useState('');
   const [sentimentResult, setSentimentResult] = useState(null);
   const [analyzingsentiment, setAnalyzingsentiment] = useState(false);
 
-  // Mock summarizer function
-  const summarizeText = async (text) => {
-    // Simulate API delay
-    await new Promise(resolve => setTimeout(resolve, 1000));
-    
-    const sentences = text.match(/[^.!?]+[.!?]+/g) || [];
-    if (sentences.length <= 2) return text;
-    
-    const summary = sentences.slice(0, Math.ceil(sentences.length / 3)).join(' ');
-    return summary;
-  };
+  // Humanizer States
+  const [humanizerText, setHumanizerText] = useState('');
+  const [humanizedText, setHumanizedText] = useState('');
+  const [humanizingText, setHumanizingText] = useState(false);
 
   const translateText = async (text, lang) => {
     if (lang === 'en' || !text) return text;
@@ -46,6 +42,135 @@ function App() {
     }
   };
 
+  // Backend Summarizer
+  const handleSummarize = async () => {
+    stopSpeech();
+    setError('');
+    
+    if (!inputText.trim()) {
+      setError("⚠️ Please paste or type some text first.");
+      return;
+    }
+    
+    setLoading(true);
+    try {
+      const response = await fetch(`${API_BASE_URL}/summarize`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ text: inputText }),
+      });
+      
+      const data = await response.json();
+      
+      if (data.error) {
+        setError(data.error);
+        setSummary('');
+      } else {
+        setSummary(data.summary);
+        const translated = await translateText(data.summary, language);
+        setTranslatedSummary(translated);
+      }
+    } catch (err) {
+      setError('Failed to connect to backend. Make sure the server is running on port 5050.');
+      console.error('Summarize error:', err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Backend Humanizer
+  const handleHumanize = async () => {
+    stopSpeech();
+    setError('');
+    
+    if (!humanizerText.trim()) {
+      setError("⚠️ Please paste or type some text first.");
+      return;
+    }
+    
+    setHumanizingText(true);
+    try {
+      const response = await fetch(`${API_BASE_URL}/humanize`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ text: humanizerText }),
+      });
+      
+      const data = await response.json();
+      
+      if (data.error) {
+        setError(data.error);
+        setHumanizedText('');
+      } else {
+        setHumanizedText(data.humanized);
+      }
+    } catch (err) {
+      setError('Failed to connect to backend. Make sure the server is running on port 5050.');
+      console.error('Humanize error:', err);
+    } finally {
+      setHumanizingText(false);
+    }
+  };
+
+  // Backend Sentiment Analyzer
+  const handleAnalyzeSentiment = async () => {
+    if (!sentimentText.trim()) {
+      setError('Please enter some text to analyze.');
+      return;
+    }
+    
+    setAnalyzingsentiment(true);
+    setError('');
+    
+    try {
+      const response = await fetch(`${API_BASE_URL}/sentiment`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ text: sentimentText }),
+      });
+      
+      const data = await response.json();
+      
+      if (data.error) {
+        setError(data.error);
+        setSentimentResult(null);
+      } else {
+        // Highlight sentiment words
+        const positiveWords = ['love', 'great', 'excellent', 'fantastic', 'amazing', 'wonderful', 'perfect', 'best', 'awesome', 'superb', 'outstanding', 'happy', 'satisfied', 'recommend', 'pleased', 'delighted', 'impressed', 'good', 'nice', 'easy', 'fast'];
+        const negativeWords = ['hate', 'terrible', 'awful', 'poor', 'bad', 'horrible', 'disappointed', 'worst', 'regret', 'avoid', 'problem', 'issue', 'broken', 'frustrated', 'unhappy', 'dislike', 'angry', 'difficult', 'slow', 'expensive'];
+        
+        let highlighted = sentimentText;
+        positiveWords.forEach(word => {
+          const regex = new RegExp(`\\b${word}\\b`, 'gi');
+          highlighted = highlighted.replace(regex, match => `<span class="bg-cyan-200 dark:bg-cyan-900 px-1 rounded">${match}</span>`);
+        });
+        
+        negativeWords.forEach(word => {
+          const regex = new RegExp(`\\b${word}\\b`, 'gi');
+          highlighted = highlighted.replace(regex, match => `<span class="bg-purple-200 dark:bg-purple-900 px-1 rounded">${match}</span>`);
+        });
+        
+        setSentimentResult({
+          ...data,
+          highlighted,
+          sentimentClass: data.sentiment === 'Positive' ? 'positive' : data.sentiment === 'Negative' ? 'negative' : 'neutral',
+          icon: data.sentiment === 'Positive' ? '😊' : data.sentiment === 'Negative' ? '😞' : '😐',
+        });
+      }
+    } catch (err) {
+      setError('Failed to connect to backend. Make sure the server is running on port 5050.');
+      console.error('Sentiment error:', err);
+    } finally {
+      setAnalyzingsentiment(false);
+    }
+  };
+
   useEffect(() => {
     stopSpeech();
     if (inputText) {
@@ -59,20 +184,6 @@ function App() {
   useEffect(() => {
     document.documentElement.classList.toggle('dark', darkMode);
   }, [darkMode]);
-
-  const handleSummarize = async () => {
-    stopSpeech();
-    if (!inputText.trim()) {
-      alert("⚠️ Please paste or type some text first.");
-      return;
-    }
-    setLoading(true);
-    const result = await summarizeText(inputText);
-    setSummary(result);
-    const translated = await translateText(result, language);
-    setTranslatedSummary(translated);
-    setLoading(false);
-  };
 
   const speak = (text, lang = 'en') => {
     if (!text || text.startsWith('⚠️')) return;
@@ -99,110 +210,6 @@ function App() {
     navigator.clipboard.writeText(text).then(() => {
       alert('📋 Copied to clipboard!');
     });
-  };
-
-  // Sentiment Analysis Functions
-  const analyzeSentiment = () => {
-    if (!sentimentText.trim()) {
-      alert('Please enter some text to analyze.');
-      return;
-    }
-    
-    setAnalyzingsentiment(true);
-    
-    setTimeout(() => {
-      const result = getSentimentAnalysis(sentimentText);
-      setSentimentResult(result);
-      setAnalyzingsentiment(false);
-    }, 800);
-  };
-
-  const getSentimentAnalysis = (text) => {
-    const positiveWords = {
-      'love': 3, 'great': 2, 'excellent': 3, 'fantastic': 3, 'amazing': 3,
-      'wonderful': 3, 'perfect': 3, 'best': 2, 'awesome': 3, 'superb': 3,
-      'outstanding': 3, 'happy': 2, 'satisfied': 2, 'recommend': 2, 'pleased': 2,
-      'delighted': 3, 'impressed': 2, 'good': 1, 'nice': 1, 'easy': 1, 'fast': 1
-    };
-    
-    const negativeWords = {
-      'hate': 3, 'terrible': 3, 'awful': 3, 'poor': 2, 'bad': 2, 'horrible': 3,
-      'disappointed': 3, 'worst': 3, 'regret': 2, 'avoid': 2, 'problem': 1,
-      'issue': 1, 'broken': 2, 'frustrated': 2, 'unhappy': 2, 'dislike': 2,
-      'angry': 2, 'difficult': 1, 'slow': 1, 'expensive': 1
-    };
-    
-    let positiveScore = 0;
-    let negativeScore = 0;
-    
-    const words = text.toLowerCase().match(/\b(\w+)\b/g) || [];
-    
-    words.forEach(word => {
-      const cleanWord = word.replace(/[^\w\s]|_/g, "").replace(/\s+/g, " ");
-      if (positiveWords[cleanWord]) {
-        positiveScore += positiveWords[cleanWord];
-      } else if (negativeWords[cleanWord]) {
-        negativeScore += negativeWords[cleanWord];
-      }
-    });
-    
-    const totalScore = positiveScore + Math.abs(negativeScore);
-    let positivePercent = 0;
-    let negativePercent = 0;
-    let neutralPercent = 0;
-    
-    if (totalScore > 0) {
-      positivePercent = Math.round((positiveScore / totalScore) * 85);
-      negativePercent = Math.round((Math.abs(negativeScore) / totalScore) * 85);
-      neutralPercent = 100 - (positivePercent + negativePercent);
-    } else {
-      neutralPercent = 100;
-    }
-    
-    positivePercent = Math.min(95, positivePercent + 5);
-    negativePercent = Math.min(95, negativeScore > 0 ? negativePercent + 5 : negativePercent);
-    neutralPercent = 100 - positivePercent - negativePercent;
-    
-    let sentiment, sentimentClass, icon, confidence;
-    
-    if (positiveScore > negativeScore && positiveScore > 0) {
-      sentiment = 'Positive';
-      sentimentClass = 'positive';
-      icon = '😊';
-      confidence = Math.min(98, positivePercent + 10);
-    } else if (negativeScore > positiveScore && negativeScore > 0) {
-      sentiment = 'Negative';
-      sentimentClass = 'negative';
-      icon = '😞';
-      confidence = Math.min(98, negativePercent + 10);
-    } else {
-      sentiment = 'Neutral';
-      sentimentClass = 'neutral';
-      icon = '😐';
-      confidence = Math.max(50, neutralPercent);
-    }
-    
-    let highlighted = text;
-    Object.keys(positiveWords).forEach(word => {
-      const regex = new RegExp(`\\b${word}\\b`, 'gi');
-      highlighted = highlighted.replace(regex, match => `<span class="bg-cyan-200 dark:bg-cyan-900 px-1 rounded">${match}</span>`);
-    });
-    
-    Object.keys(negativeWords).forEach(word => {
-      const regex = new RegExp(`\\b${word}\\b`, 'gi');
-      highlighted = highlighted.replace(regex, match => `<span class="bg-purple-200 dark:bg-purple-900 px-1 rounded">${match}</span>`);
-    });
-    
-    return {
-      sentiment,
-      confidence,
-      sentimentClass,
-      icon,
-      highlighted,
-      positivePercent,
-      negativePercent,
-      neutralPercent
-    };
   };
 
   const exampleTexts = [
@@ -232,7 +239,13 @@ function App() {
 
       {/* Tab Navigation */}
       <div className="max-w-7xl mx-auto px-4 py-6">
-        <div className="flex gap-4 mb-6 bg-white dark:bg-gray-800 p-2 rounded-xl shadow-md">
+        {error && (
+          <div className="bg-red-100 dark:bg-red-900 border-l-4 border-red-600 p-4 mb-6 rounded">
+            <p className="text-red-700 dark:text-red-200">{error}</p>
+          </div>
+        )}
+
+        <div className="flex gap-4 mb-6 bg-white dark:bg-gray-800 p-2 rounded-xl shadow-md flex-wrap">
           <button
             onClick={() => setActiveTab('summarizer')}
             className={`flex-1 py-3 px-6 rounded-lg font-semibold transition ${
@@ -252,6 +265,16 @@ function App() {
             }`}
           >
             😊 Sentiment Analyzer
+          </button>
+          <button
+            onClick={() => setActiveTab('humanizer')}
+            className={`flex-1 py-3 px-6 rounded-lg font-semibold transition ${
+              activeTab === 'humanizer'
+                ? 'bg-green-600 text-white shadow-lg'
+                : 'bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600'
+            }`}
+          >
+            👤 Humanizer
           </button>
         </div>
 
@@ -377,7 +400,7 @@ function App() {
 
               <div className="flex gap-3 mb-4">
                 <button
-                  onClick={analyzeSentiment}
+                  onClick={handleAnalyzeSentiment}
                   disabled={analyzingsentiment}
                   className="flex-1 bg-gradient-to-r from-purple-600 to-pink-600 text-white py-3 rounded-xl font-semibold hover:shadow-lg transition disabled:opacity-50"
                 >
@@ -440,30 +463,30 @@ function App() {
                     <div className="flex h-6 rounded-full overflow-hidden shadow-inner mb-4">
                       <div 
                         className="bg-cyan-400 dark:bg-cyan-600 transition-all duration-500"
-                        style={{ width: `${sentimentResult.positivePercent}%` }}
+                        style={{ width: `${sentimentResult.positive_percent}%` }}
                       ></div>
                       <div 
                         className="bg-pink-400 dark:bg-pink-600 transition-all duration-500"
-                        style={{ width: `${sentimentResult.neutralPercent}%` }}
+                        style={{ width: `${sentimentResult.neutral_percent}%` }}
                       ></div>
                       <div 
                         className="bg-purple-400 dark:bg-purple-600 transition-all duration-500"
-                        style={{ width: `${sentimentResult.negativePercent}%` }}
+                        style={{ width: `${sentimentResult.negative_percent}%` }}
                       ></div>
                     </div>
 
                     <div className="flex justify-around text-sm">
                       <div className="text-center">
                         <div className="font-semibold text-cyan-600 dark:text-cyan-400">Positive</div>
-                        <div>{sentimentResult.positivePercent}%</div>
+                        <div>{sentimentResult.positive_percent}%</div>
                       </div>
                       <div className="text-center">
                         <div className="font-semibold text-pink-600 dark:text-pink-400">Neutral</div>
-                        <div>{sentimentResult.neutralPercent}%</div>
+                        <div>{sentimentResult.neutral_percent}%</div>
                       </div>
                       <div className="text-center">
                         <div className="font-semibold text-purple-600 dark:text-purple-400">Negative</div>
-                        <div>{sentimentResult.negativePercent}%</div>
+                        <div>{sentimentResult.negative_percent}%</div>
                       </div>
                     </div>
                   </div>
@@ -509,7 +532,7 @@ function App() {
                       key={idx}
                       onClick={() => {
                         setSentimentText(example.text);
-                        setTimeout(() => analyzeSentiment(), 100);
+                        setTimeout(() => handleAnalyzeSentiment(), 100);
                       }}
                       className="bg-white dark:bg-gray-700 p-4 rounded-xl shadow-md hover:shadow-lg transition cursor-pointer border-2 border-gray-200 dark:border-gray-600 hover:border-purple-400"
                     >
@@ -526,6 +549,155 @@ function App() {
                       </p>
                     </div>
                   ))}
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Humanizer Tab */}
+        {activeTab === 'humanizer' && (
+          <div className="space-y-6">
+            <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-xl p-6">
+              <h2 className="text-2xl font-bold mb-4 text-green-600 dark:text-green-400">
+                Text Humanizer
+              </h2>
+              <p className="text-gray-600 dark:text-gray-300 mb-6">
+                Transform robotic or AI-generated text into natural, conversational language. Perfect for making formal content more readable and engaging.
+              </p>
+
+              <textarea
+                value={humanizerText}
+                onChange={(e) => setHumanizerText(e.target.value)}
+                placeholder="Paste your AI-generated or formal text here..."
+                className="w-full h-40 p-4 border-2 rounded-xl bg-gray-50 dark:bg-gray-700 dark:text-white border-gray-300 dark:border-gray-600 resize-none mb-4 focus:border-green-500 focus:outline-none"
+              />
+
+              <div className="flex gap-3 mb-4">
+                <button
+                  onClick={handleHumanize}
+                  disabled={humanizingText}
+                  className="flex-1 bg-gradient-to-r from-green-600 to-emerald-600 text-white py-3 rounded-xl font-semibold hover:shadow-lg transition disabled:opacity-50"
+                >
+                  {humanizingText ? '⏳ Humanizing...' : '👤 Humanize Text'}
+                </button>
+                {humanizerText && (
+                  <>
+                    <button
+                      onClick={() => speak(humanizerText, 'en')}
+                      className="bg-green-500 px-4 py-3 rounded-xl text-white hover:bg-green-600 transition"
+                      title="Read Text"
+                    >
+                      🔊
+                    </button>
+                    <button
+                      onClick={() => copyToClipboard(humanizerText)}
+                      className="bg-gray-500 px-4 py-3 rounded-xl text-white hover:bg-gray-600 transition"
+                      title="Copy Text"
+                    >
+                      📋
+                    </button>
+                    <button
+                      onClick={stopSpeech}
+                      className="bg-red-500 px-4 py-3 rounded-xl text-white hover:bg-red-600 transition"
+                      title="Stop Speech"
+                    >
+                      ⏹
+                    </button>
+                  </>
+                )}
+              </div>
+
+              {humanizerText && (
+                <div className="bg-gradient-to-br from-gray-50 to-green-50 dark:from-gray-700 dark:to-gray-800 p-6 rounded-xl shadow-md mb-4">
+                  <div className="flex justify-between items-center mb-3">
+                    <h3 className="text-xl font-semibold">📝 Original Text</h3>
+                    <div className="flex gap-2">
+                      <button
+                        onClick={() => speak(humanizerText, 'en')}
+                        className="bg-green-500 px-3 py-2 rounded-lg text-white hover:bg-green-600 transition text-sm"
+                      >
+                        🔊 Read
+                      </button>
+                      <button
+                        onClick={() => copyToClipboard(humanizerText)}
+                        className="bg-gray-500 px-3 py-2 rounded-lg text-white hover:bg-gray-600 transition text-sm"
+                      >
+                        📋 Copy
+                      </button>
+                      <button
+                        onClick={stopSpeech}
+                        className="bg-red-500 px-3 py-2 rounded-lg text-white hover:bg-red-600 transition text-sm"
+                      >
+                        ⏹ Stop
+                      </button>
+                    </div>
+                  </div>
+                  <div className="text-gray-700 dark:text-gray-200">
+                    {humanizerText.split('\n').map((para, i) => (
+                      <p key={i} className="mb-3">{para}</p>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {humanizedText && (
+                <div className="bg-gradient-to-br from-green-50 to-emerald-50 dark:from-green-900 dark:to-emerald-900 p-6 rounded-xl shadow-md">
+                  <div className="flex justify-between items-center mb-3">
+                    <h3 className="text-xl font-semibold">✨ Humanized Text</h3>
+                    <div className="flex gap-2">
+                      <button
+                        onClick={() => speak(humanizedText, 'en')}
+                        className="bg-green-500 px-3 py-2 rounded-lg text-white hover:bg-green-600 transition text-sm"
+                      >
+                        🔊 Read
+                      </button>
+                      <button
+                        onClick={() => copyToClipboard(humanizedText)}
+                        className="bg-gray-500 px-3 py-2 rounded-lg text-white hover:bg-gray-600 transition text-sm"
+                      >
+                        📋 Copy
+                      </button>
+                      <button
+                        onClick={stopSpeech}
+                        className="bg-red-500 px-3 py-2 rounded-lg text-white hover:bg-red-600 transition text-sm"
+                      >
+                        ⏹ Stop
+                      </button>
+                    </div>
+                  </div>
+                  <p className="text-gray-700 dark:text-gray-100 leading-relaxed whitespace-pre-wrap">{humanizedText}</p>
+                </div>
+              )}
+
+              {/* Example Cards */}
+              <div className="mt-8">
+                <h3 className="text-xl font-semibold mb-4">💡 Example Transformations:</h3>
+                <div className="grid md:grid-cols-2 gap-4">
+                  <div className="bg-gray-50 dark:bg-gray-700 p-4 rounded-xl border-2 border-gray-200 dark:border-gray-600">
+                    <div className="font-semibold text-red-600 dark:text-red-400 mb-2">❌ Robotic:</div>
+                    <p className="text-sm text-gray-600 dark:text-gray-300 italic">
+                      "It is important to note that the utilization of this methodology will facilitate the achievement of optimal results."
+                    </p>
+                  </div>
+                  <div className="bg-green-50 dark:bg-green-900 p-4 rounded-xl border-2 border-green-200 dark:border-green-600">
+                    <div className="font-semibold text-green-600 dark:text-green-400 mb-2">✅ Human-like:</div>
+                    <p className="text-sm text-gray-600 dark:text-gray-300 italic">
+                      "Keep in mind that using this method will help you get the best results."
+                    </p>
+                  </div>
+                  <div className="bg-gray-50 dark:bg-gray-700 p-4 rounded-xl border-2 border-gray-200 dark:border-gray-600">
+                    <div className="font-semibold text-red-600 dark:text-red-400 mb-2">❌ Formal:</div>
+                    <p className="text-sm text-gray-600 dark:text-gray-300 italic">
+                      "In accordance with our predetermined protocol, all personnel must ascertain compliance prior to project commencement."
+                    </p>
+                  </div>
+                  <div className="bg-green-50 dark:bg-green-900 p-4 rounded-xl border-2 border-green-200 dark:border-green-600">
+                    <div className="font-semibold text-green-600 dark:text-green-400 mb-2">✅ Natural:</div>
+                    <p className="text-sm text-gray-600 dark:text-gray-300 italic">
+                      "Following our plan, everyone should check that they're ready before starting the project."
+                    </p>
+                  </div>
                 </div>
               </div>
             </div>
